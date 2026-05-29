@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "./auth/AuthContext";
+import { LoginButton, UserMenu, ProfileModal } from "./auth/AuthComponents";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const style = `
@@ -803,8 +805,10 @@ export default function CommonGround() {
   const [page, setPage] = useState('home');
   const [selectedProject, setSelectedProject] = useState(null);
   const [showPostModal, setShowPostModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [stats] = useState(MOCK_STATS);
+  const { user, loading } = useAuth();
 
   const showToast = (msg) => {
     setToast(msg);
@@ -833,7 +837,14 @@ export default function CommonGround() {
           <div className="nav-links">
             <button className={`nav-btn ${page === 'projects' ? 'active' : ''}`} onClick={() => setPage('projects')}>Projects</button>
             <button className={`nav-btn ${page === 'resources' ? 'active' : ''}`} onClick={() => setPage('resources')}>Resources</button>
-            <button className="nav-cta" onClick={() => setShowPostModal(true)}>+ Post project</button>
+            {user && (
+              <button className="nav-cta" onClick={() => setShowPostModal(true)}>+ Post project</button>
+            )}
+            {!loading && (
+              user
+                ? <UserMenu onEditProfile={() => setShowProfileModal(true)} />
+                : <LoginButton />
+            )}
           </div>
         </nav>
 
@@ -881,6 +892,11 @@ export default function CommonGround() {
         {/* Post modal */}
         {showPostModal && (
           <PostProjectModal onClose={() => setShowPostModal(false)} onSubmit={handlePostSubmit} />
+        )}
+
+        {/* Profile modal */}
+        {showProfileModal && (
+          <ProfileModal onClose={() => setShowProfileModal(false)} />
         )}
 
         {/* Toast */}
