@@ -6,7 +6,7 @@ account_id = "bd46ae11d484452139c38cbfdd7b2a46"
 [[d1_databases]]
 binding = "DB"
 database_name = "commonground"
-database_id = "TO_BE_CREATED"
+database_id = "dfcabaeb-af61-48fa-817f-ea345b8f27b6"
 
 [vars]
 ENVIRONMENT = "production"
