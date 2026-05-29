@@ -1,0 +1,13 @@
+name = "commonground-api"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
+account_id = "bd46ae11d484452139c38cbfdd7b2a46"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "commonground"
+database_id = "TO_BE_CREATED"
+
+[vars]
+ENVIRONMENT = "production"
+PLATFORM_NAME = "CommonGround"
