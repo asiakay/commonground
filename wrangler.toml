@@ -1,7 +1,7 @@
 name = "commonground-api"
 main = "worker/index.js"
 compatibility_date = "2024-01-01"
-account_id = "bd46ae11d484452139c38cbfdd7b2a46"
+account_id = "6d42189fc4724a2d0ad8650b53814692"
 
 [[d1_databases]]
 binding = "DB"
