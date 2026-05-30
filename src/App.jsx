@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "./auth/AuthContext";
+import { LoginButton, UserMenu, ProfileModal } from "./auth/AuthComponents";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const style = `
@@ -591,7 +593,7 @@ function ContributePanel({ project, onContribute }) {
 }
 
 // ── Pages ──────────────────────────────────────────────────────────────────
-function HeroSection({ onExplore, onPost }) {
+function HeroSection({ onExplore, onPost, projects }) {
   return (
     <div className="hero">
       <div>
@@ -611,7 +613,7 @@ function HeroSection({ onExplore, onPost }) {
       </div>
       <div className="hero-visual">
         <div className="hero-visual-title">Active on CommonGround</div>
-        {MOCK_PROJECTS.map(p => (
+        {projects.slice(0, 3).map(p => (
           <div className="mini-card" key={p.id}>
             <div className="mini-card-title">{p.title}</div>
             <div className="mini-progress">
@@ -628,10 +630,10 @@ function HeroSection({ onExplore, onPost }) {
   );
 }
 
-function ProjectsPage({ onSelect }) {
+function ProjectsPage({ onSelect, projects, loading }) {
   const [filter, setFilter] = useState('all');
   const categories = ['all', 'energy', 'land', 'tools', 'housing', 'funding', 'power'];
-  const filtered = filter === 'all' ? MOCK_PROJECTS : MOCK_PROJECTS.filter(p => p.category === filter);
+  const filtered = filter === 'all' ? projects : projects.filter(p => p.category === filter);
 
   return (
     <div className="main">
@@ -648,9 +650,15 @@ function ProjectsPage({ onSelect }) {
           </button>
         ))}
       </div>
-      <div className="project-grid">
-        {filtered.map(p => <ProjectCard key={p.id} project={p} onClick={onSelect} />)}
-      </div>
+      {loading
+        ? <div style={{ color: 'var(--sage)', padding: '2rem 0' }}>Loading projects…</div>
+        : <div className="project-grid">
+            {filtered.length > 0
+              ? filtered.map(p => <ProjectCard key={p.id} project={p} onClick={onSelect} />)
+              : <div style={{ color: 'var(--sage)', padding: '2rem 0' }}>No projects found.</div>
+            }
+          </div>
+      }
     </div>
   );
 }
@@ -790,7 +798,7 @@ function PostProjectModal({ onClose, onSubmit }) {
           <label className="form-label">Location</label>
           <input className="form-input" placeholder="e.g. Jamaica Plain, Boston" value={form.location} onChange={e => set('location', e.target.value)} />
         </div>
-        <button className="btn-primary" style={{ width: '100%' }} onClick={() => onSubmit(form)}>
+        <button className="btn-primary" style={{ width: '100%' }} onClick={() => onSubmit(form)} disabled={!form.title || !form.description}>
           Submit project
         </button>
       </div>
@@ -803,8 +811,22 @@ export default function CommonGround() {
   const [page, setPage] = useState('home');
   const [selectedProject, setSelectedProject] = useState(null);
   const [showPostModal, setShowPostModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [stats] = useState(MOCK_STATS);
+  const [projects, setProjects] = useState(MOCK_PROJECTS);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.projects?.length) setProjects(data.projects);
+      })
+      .catch(() => {})
+      .finally(() => setProjectsLoading(false));
+  }, []);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -815,9 +837,26 @@ export default function CommonGround() {
     showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
   };
 
-  const handlePostSubmit = (form) => {
+  const handlePostSubmit = async (form) => {
     setShowPostModal(false);
-    showToast(`✓ "${form.title}" submitted for review`);
+    try {
+      const r = await fetch('/api/projects', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, owner_id: user?.id }),
+      });
+      if (r.ok) {
+        showToast(`✓ "${form.title}" posted successfully`);
+        // Refresh project list
+        const data = await fetch('/api/projects').then(r => r.ok ? r.json() : null);
+        if (data?.projects?.length) setProjects(data.projects);
+      } else {
+        showToast(`✗ Failed to post project — please try again`);
+      }
+    } catch {
+      showToast(`✗ Network error — please try again`);
+    }
   };
 
   return (
@@ -833,7 +872,14 @@ export default function CommonGround() {
           <div className="nav-links">
             <button className={`nav-btn ${page === 'projects' ? 'active' : ''}`} onClick={() => setPage('projects')}>Projects</button>
             <button className={`nav-btn ${page === 'resources' ? 'active' : ''}`} onClick={() => setPage('resources')}>Resources</button>
-            <button className="nav-cta" onClick={() => setShowPostModal(true)}>+ Post project</button>
+            {user && (
+              <button className="nav-cta" onClick={() => setShowPostModal(true)}>+ Post project</button>
+            )}
+            {!loading && (
+              user
+                ? <UserMenu onEditProfile={() => setShowProfileModal(true)} />
+                : <LoginButton />
+            )}
           </div>
         </nav>
 
@@ -864,10 +910,15 @@ export default function CommonGround() {
           <HeroSection
             onExplore={() => setPage('projects')}
             onPost={() => setShowPostModal(true)}
+            projects={projects}
           />
         )}
         {page === 'projects' && !selectedProject && (
-          <ProjectsPage onSelect={(p) => { setSelectedProject(p); setPage('detail'); }} />
+          <ProjectsPage
+            onSelect={(p) => { setSelectedProject(p); setPage('detail'); }}
+            projects={projects}
+            loading={projectsLoading}
+          />
         )}
         {page === 'detail' && selectedProject && (
           <ProjectDetailPage
@@ -881,6 +932,11 @@ export default function CommonGround() {
         {/* Post modal */}
         {showPostModal && (
           <PostProjectModal onClose={() => setShowPostModal(false)} onSubmit={handlePostSubmit} />
+        )}
+
+        {/* Profile modal */}
+        {showProfileModal && (
+          <ProfileModal onClose={() => setShowProfileModal(false)} />
         )}
 
         {/* Toast */}
