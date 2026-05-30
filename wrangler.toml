@@ -10,7 +10,5 @@ database_id = "dfcabaeb-af61-48fa-817f-ea345b8f27b6"
 [vars]
 ENVIRONMENT = "production"
 PLATFORM_NAME = "CommonGround"
-# Set these in the Cloudflare Pages dashboard → Settings → Environment variables
-GOOGLE_CLIENT_ID = ""
-GOOGLE_CLIENT_SECRET = ""
-JWT_SECRET = ""
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and JWT_SECRET are set as
+# encrypted Secrets in the Cloudflare Pages dashboard.
