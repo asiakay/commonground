@@ -89,6 +89,12 @@ export async function onRequest({ request, env }) {
 
   // GET /auth/login — redirect to Google consent screen
   if (path === '/auth/login' && request.method === 'GET') {
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+      return new Response(
+        'Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Cloudflare Pages → Settings → Environment Variables.',
+        { status: 503, headers: { 'Content-Type': 'text/plain' } }
+      );
+    }
     const params = new URLSearchParams({
       client_id:     GOOGLE_CLIENT_ID,
       redirect_uri:  REDIRECT_URI,
