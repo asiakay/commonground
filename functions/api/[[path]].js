@@ -166,6 +166,85 @@ async function router(request, env) {
     return json(resource, 201);
   }
 
+  const needPatchMatch = path.match(/^\/api\/needs\/([^/]+)$/);
+  if (method === 'PATCH' && needPatchMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
+    const id = needPatchMatch[1];
+    const body = await request.json();
+    await env.DB.prepare('UPDATE needs SET fulfilled = ? WHERE id = ?').bind(body.fulfilled ? 1 : 0, id).run();
+    const need = await env.DB.prepare('SELECT * FROM needs WHERE id = ?').bind(id).first();
+    if (!need) return err('Not found', 404);
+    return json(need);
+  }
+
+  const resourcePatchMatch = path.match(/^\/api\/resources\/([^/]+)$/);
+  if (method === 'PATCH' && resourcePatchMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
+    const id = resourcePatchMatch[1];
+    const resource = await env.DB.prepare('SELECT * FROM resources WHERE id = ?').bind(id).first();
+    if (!resource) return err('Not found', 404);
+    if (resource.owner_id !== session.sub) return err('Forbidden', 403);
+    const body = await request.json();
+    await env.DB.prepare('UPDATE resources SET available = ? WHERE id = ?').bind(body.available ? 1 : 0, id).run();
+    return json({ ...resource, available: body.available ? 1 : 0 });
+  }
+
+  const projectPatchMatch = path.match(/^\/api\/projects\/([^/]+)$/);
+  if (method === 'PATCH' && projectPatchMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
+    const id = projectPatchMatch[1];
+    const project = await env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first();
+    if (!project) return err('Not found', 404);
+    if (project.owner_id !== session.sub) return err('Forbidden', 403);
+    const body = await request.json();
+    const { status } = body;
+    if (!['draft', 'active', 'funded', 'closed'].includes(status)) return err('Invalid status');
+    await env.DB.prepare("UPDATE projects SET status = ?, updated_at = datetime('now') WHERE id = ?").bind(status, id).run();
+    const updated = await env.DB.prepare(
+      'SELECT p.*, u.name as owner_name, u.org_name as owner_org FROM projects p JOIN users u ON p.owner_id = u.id WHERE p.id = ?'
+    ).bind(id).first();
+    return json(updated);
+  }
+
+  const matchesListMatch = path.match(/^\/api\/projects\/([^/]+)\/matches$/);
+  if (method === 'GET' && matchesListMatch) {
+    const { results } = await env.DB.prepare(
+      'SELECT m.*, u.name as investor_name, u.org_name as investor_org FROM matches m JOIN users u ON m.investor_id = u.id WHERE m.project_id = ? ORDER BY m.created_at DESC'
+    ).bind(matchesListMatch[1]).all();
+    return json(results);
+  }
+  if (method === 'POST' && matchesListMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
+    const project_id = matchesListMatch[1];
+    const body = await request.json();
+    const { match_type, amount, message } = body;
+    if (!match_type) return err('Missing required fields');
+    const id = uid();
+    await env.DB.prepare(
+      'INSERT INTO matches (id, project_id, investor_id, match_type, amount, message) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(id, project_id, session.sub, match_type, amount || null, message || null).run();
+    const match = await env.DB.prepare('SELECT * FROM matches WHERE id = ?').bind(id).first();
+    return json(match, 201);
+  }
+
+  const matchPatchMatch = path.match(/^\/api\/matches\/([^/]+)$/);
+  if (method === 'PATCH' && matchPatchMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
+    const id = matchPatchMatch[1];
+    const body = await request.json();
+    const { status } = body;
+    if (!['accepted', 'declined', 'completed'].includes(status)) return err('Invalid status');
+    await env.DB.prepare('UPDATE matches SET status = ? WHERE id = ?').bind(status, id).run();
+    const match = await env.DB.prepare('SELECT * FROM matches WHERE id = ?').bind(id).first();
+    if (!match) return err('Not found', 404);
+    return json(match);
+  }
+
   const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
   if (method === 'GET' && userMatch) {
     const user = await env.DB.prepare(

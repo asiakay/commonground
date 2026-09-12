@@ -502,7 +502,8 @@ function ProjectCard({ project, onClick }) {
   );
 }
 
-function ResourceCard({ resource }) {
+function ResourceCard({ resource, user, onUnavailable }) {
+  const isOwner = user?.id === resource.owner_id;
   return (
     <div className="resource-card">
       <span className={`resource-type-badge ${TYPE_COLORS[resource.type]}`}>{resource.type}</span>
@@ -520,6 +521,14 @@ function ResourceCard({ resource }) {
           {resource.owner_org || resource.owner_name}
         </span>
       </div>
+      {isOwner && (
+        <button
+          style={{ marginTop: '0.75rem', width: '100%', background: 'none', border: '1px solid rgba(196,75,43,0.4)', color: 'var(--red)', cursor: 'pointer', borderRadius: '6px', padding: '0.4rem', fontFamily: 'var(--s)', fontSize: '0.75rem' }}
+          onClick={() => onUnavailable(resource.id)}
+        >
+          Mark unavailable
+        </button>
+      )}
     </div>
   );
 }
@@ -702,10 +711,14 @@ function ProjectsPage({ onSelect, projects, loading }) {
   );
 }
 
-function ProjectDetailPage({ project, onBack, onContribute, user }) {
-  const [needs, setNeeds] = useState(project.needs || MOCK_NEEDS[project.id] || []);
+function ProjectDetailPage({ project: initialProject, onBack, onContribute, onProjectUpdate, user, showToast }) {
+  const [project, setProject] = useState(initialProject);
+  const [needs, setNeeds] = useState(initialProject.needs || MOCK_NEEDS[initialProject.id] || []);
   const [addingNeed, setAddingNeed] = useState(false);
   const [needForm, setNeedForm] = useState({ type: 'funding', description: '', urgency: 'normal' });
+  const [matches, setMatches] = useState([]);
+  const [offerMatch, setOfferMatch] = useState(false);
+  const [matchForm, setMatchForm] = useState({ match_type: 'direct', amount: '', message: '' });
   const isOwner = user?.id === project.owner_id;
   const progress = pct(project.funding_raised, project.funding_goal);
 
@@ -713,6 +726,10 @@ function ProjectDetailPage({ project, onBack, onContribute, user }) {
     fetch(`/api/projects/${project.id}/needs`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (Array.isArray(data)) setNeeds(data); })
+      .catch(() => {});
+    fetch(`/api/projects/${project.id}/matches`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data)) setMatches(data); })
       .catch(() => {});
   }, [project.id]);
 
@@ -734,14 +751,88 @@ function ProjectDetailPage({ project, onBack, onContribute, user }) {
     } catch {}
   };
 
+  const handleFulfillNeed = async (id) => {
+    try {
+      const r = await fetch(`/api/needs/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fulfilled: true }),
+      });
+      if (r.ok) setNeeds(ns => ns.map(n => n.id === id ? { ...n, fulfilled: 1 } : n));
+    } catch {}
+  };
+
+  const handleStatusChange = async (status) => {
+    try {
+      const r = await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        setProject(updated);
+        onProjectUpdate?.(updated);
+        showToast?.(`Project status updated to "${status}"`);
+      }
+    } catch {}
+  };
+
+  const handleOfferMatch = async () => {
+    if (!matchForm.amount || Number(matchForm.amount) <= 0) return;
+    try {
+      const r = await fetch(`/api/projects/${project.id}/matches`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...matchForm, amount: Number(matchForm.amount) }),
+      });
+      if (r.ok) {
+        const m = await r.json();
+        setMatches(ms => [m, ...ms]);
+        setMatchForm({ match_type: 'direct', amount: '', message: '' });
+        setOfferMatch(false);
+        showToast?.('Match offer submitted');
+      }
+    } catch {}
+  };
+
+  const handleMatchStatus = async (id, status) => {
+    try {
+      const r = await fetch(`/api/matches/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (r.ok) setMatches(ms => ms.map(m => m.id === id ? { ...m, status } : m));
+    } catch {}
+  };
+
   return (
     <div className="main">
       <button className="back-btn" onClick={onBack}>← Back to projects</button>
 
       <div style={{ marginBottom: '2rem' }}>
-        <span className="card-category" style={{ marginBottom: '0.75rem', display: 'inline-flex' }}>
-          {CATEGORY_ICONS[project.category]} {project.category}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+          <span className="card-category" style={{ display: 'inline-flex' }}>
+            {CATEGORY_ICONS[project.category]} {project.category}
+          </span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.25rem 0.65rem', borderRadius: '4px', background: project.status === 'active' ? 'rgba(61,92,46,0.3)' : project.status === 'funded' ? 'rgba(232,184,75,0.15)' : 'rgba(255,255,255,0.06)', color: project.status === 'active' ? 'var(--sage)' : project.status === 'funded' ? 'var(--sun)' : 'var(--sand)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            {project.status}
+          </span>
+          {isOwner && (
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {['active', 'funded', 'closed'].filter(s => s !== project.status).map(s => (
+                <button key={s} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--sand)', cursor: 'pointer', borderRadius: '6px', padding: '0.25rem 0.6rem', fontFamily: 'var(--s)', fontSize: '0.7rem' }} onClick={() => handleStatusChange(s)}>
+                  → {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <h1 style={{ fontFamily: 'var(--r)', fontSize: '2.25rem', color: 'var(--white)', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
           {project.title}
         </h1>
@@ -785,12 +876,20 @@ function ProjectDetailPage({ project, onBack, onContribute, user }) {
             <div className="panel">
               <div className="panel-title">What this project needs</div>
               {needs.map(n => (
-                <div key={n.id} className="need-item">
+                <div key={n.id} className="need-item" style={{ opacity: n.fulfilled ? 0.5 : 1 }}>
                   <div className={`urgency-dot urgency-${n.urgency}`} />
-                  <div>
-                    <div className="need-type">{n.type}</div>
+                  <div style={{ flex: 1 }}>
+                    <div className="need-type">{n.type}{n.fulfilled ? ' · fulfilled' : ''}</div>
                     <div className="need-text">{n.description}</div>
                   </div>
+                  {isOwner && !n.fulfilled && (
+                    <button
+                      style={{ background: 'none', border: '1px solid rgba(122,158,106,0.4)', color: 'var(--sage)', cursor: 'pointer', borderRadius: '6px', padding: '0.3rem 0.6rem', fontFamily: 'var(--s)', fontSize: '0.7rem', flexShrink: 0 }}
+                      onClick={() => handleFulfillNeed(n.id)}
+                    >
+                      ✓ Fulfilled
+                    </button>
+                  )}
                 </div>
               ))}
               {isOwner && (addingNeed ? (
@@ -814,6 +913,45 @@ function ProjectDetailPage({ project, onBack, onContribute, user }) {
               ))}
             </div>
           )}
+          <div className="panel" style={{ marginBottom: '1.5rem' }}>
+            <div className="panel-title">Match offers</div>
+            {matches.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--sage)', marginBottom: '1rem' }}>No match offers yet.</div>}
+            {matches.map(m => (
+              <div key={m.id} className="match-offer">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div className="match-type">{m.match_type} · {m.status}</div>
+                    {m.amount && <div className="match-amount">{fmt(m.amount)}</div>}
+                    <div style={{ fontSize: '0.8rem', color: 'var(--sage)', marginTop: '0.25rem' }}>{m.investor_org || m.investor_name}</div>
+                    {m.message && <div className="match-msg">{m.message}</div>}
+                  </div>
+                  {isOwner && m.status === 'pending' && (
+                    <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                      <button style={{ background: 'rgba(61,92,46,0.4)', border: 'none', color: 'var(--sage)', cursor: 'pointer', borderRadius: '6px', padding: '0.3rem 0.6rem', fontFamily: 'var(--s)', fontSize: '0.7rem' }} onClick={() => handleMatchStatus(m.id, 'accepted')}>Accept</button>
+                      <button style={{ background: 'none', border: '1px solid rgba(196,75,43,0.4)', color: 'var(--red)', cursor: 'pointer', borderRadius: '6px', padding: '0.3rem 0.6rem', fontFamily: 'var(--s)', fontSize: '0.7rem' }} onClick={() => handleMatchStatus(m.id, 'declined')}>Decline</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {!isOwner && user && (offerMatch ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                <select className="form-input" value={matchForm.match_type} onChange={e => setMatchForm(f => ({ ...f, match_type: e.target.value }))}>
+                  {['direct', 'qf', 'grant', 'loan'].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <input className="form-input" type="number" placeholder="Amount ($)" value={matchForm.amount} onChange={e => setMatchForm(f => ({ ...f, amount: e.target.value }))} />
+                <textarea className="form-input" placeholder="Message (optional)" value={matchForm.message} onChange={e => setMatchForm(f => ({ ...f, message: e.target.value }))} />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn-primary" style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem' }} onClick={handleOfferMatch}>Submit offer</button>
+                  <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.6rem 1rem' }} onClick={() => setOfferMatch(false)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button style={{ background: 'none', border: '1px dashed rgba(255,255,255,0.2)', color: 'var(--sage)', cursor: 'pointer', borderRadius: '6px', padding: '0.5rem', width: '100%', fontFamily: 'var(--s)', fontSize: '0.8rem' }} onClick={() => setOfferMatch(true)}>
+                + Offer a match
+              </button>
+            ))}
+          </div>
         </div>
 
         <ContributePanel project={project} onContribute={(data) => onContribute(project, data)} />
@@ -822,10 +960,25 @@ function ProjectDetailPage({ project, onBack, onContribute, user }) {
   );
 }
 
-function ResourcesPage({ resources, onOfferResource }) {
+function ResourcesPage({ resources, setResources, onOfferResource, user, showToast }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const types = ['all', 'funding', 'land', 'tools', 'expertise', 'space', 'technology'];
   const filtered = typeFilter === 'all' ? resources : resources.filter(r => r.type === typeFilter);
+
+  const handleUnavailable = async (id) => {
+    try {
+      const r = await fetch(`/api/resources/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ available: false }),
+      });
+      if (r.ok) {
+        setResources(rs => rs.filter(x => x.id !== id));
+        showToast('Resource marked unavailable');
+      }
+    } catch {}
+  };
 
   return (
     <div className="main">
@@ -846,7 +999,7 @@ function ResourcesPage({ resources, onOfferResource }) {
         ))}
       </div>
       <div className="resource-grid">
-        {filtered.map(r => <ResourceCard key={r.id} resource={r} />)}
+        {filtered.map(r => <ResourceCard key={r.id} resource={r} user={user} onUnavailable={handleUnavailable} />)}
       </div>
     </div>
   );
@@ -989,6 +1142,11 @@ export default function CommonGround() {
     }
   };
 
+  const handleProjectUpdate = (updated) => {
+    setProjects(ps => ps.map(p => p.id === updated.id ? updated : p));
+    setSelectedProject(prev => prev?.id === updated.id ? updated : prev);
+  };
+
   const handlePostSubmit = async (form) => {
     setShowPostModal(false);
     try {
@@ -1077,10 +1235,12 @@ export default function CommonGround() {
             project={selectedProject}
             onBack={() => { setSelectedProject(null); setPage('projects'); }}
             onContribute={handleContribute}
+            onProjectUpdate={handleProjectUpdate}
             user={user}
+            showToast={showToast}
           />
         )}
-        {page === 'resources' && <ResourcesPage resources={resources} onOfferResource={() => setShowOfferModal(true)} />}
+        {page === 'resources' && <ResourcesPage resources={resources} setResources={setResources} onOfferResource={() => setShowOfferModal(true)} user={user} showToast={showToast} />}
 
         {/* Post modal */}
         {showPostModal && (
