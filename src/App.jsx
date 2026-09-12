@@ -592,6 +592,45 @@ function ContributePanel({ project, onContribute }) {
   );
 }
 
+function OfferResourceModal({ onClose, onSubmit }) {
+  const types = ['funding', 'land', 'tools', 'expertise', 'space', 'technology'];
+  const [form, setForm] = useState({ type: 'funding', title: '', description: '', quantity: '', value: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2 className="modal-title">Offer a resource</h2>
+        <div className="form-group">
+          <label className="form-label">Resource type</label>
+          <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+            {types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Title</label>
+          <input className="form-input" placeholder="e.g. Legal expertise for co-ops" value={form.title} onChange={e => set('title', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Description</label>
+          <textarea className="form-input" placeholder="What are you offering and who should reach out?" value={form.description} onChange={e => set('description', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Quantity / scope (optional)</label>
+          <input className="form-input" placeholder="e.g. Up to 20 hrs/project" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Estimated value ($ optional)</label>
+          <input className="form-input" type="number" placeholder="e.g. 5000" value={form.value} onChange={e => set('value', e.target.value)} />
+        </div>
+        <button className="btn-primary" style={{ width: '100%' }} onClick={() => onSubmit(form)} disabled={!form.title || !form.description}>
+          Submit resource
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Pages ──────────────────────────────────────────────────────────────────
 function HeroSection({ onExplore, onPost, projects }) {
   return (
@@ -663,9 +702,37 @@ function ProjectsPage({ onSelect, projects, loading }) {
   );
 }
 
-function ProjectDetailPage({ project, onBack, onContribute }) {
-  const needs = MOCK_NEEDS[project.id] || [];
+function ProjectDetailPage({ project, onBack, onContribute, user }) {
+  const [needs, setNeeds] = useState(project.needs || MOCK_NEEDS[project.id] || []);
+  const [addingNeed, setAddingNeed] = useState(false);
+  const [needForm, setNeedForm] = useState({ type: 'funding', description: '', urgency: 'normal' });
+  const isOwner = user?.id === project.owner_id;
   const progress = pct(project.funding_raised, project.funding_goal);
+
+  useEffect(() => {
+    fetch(`/api/projects/${project.id}/needs`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data)) setNeeds(data); })
+      .catch(() => {});
+  }, [project.id]);
+
+  const handleAddNeed = async () => {
+    if (!needForm.description) return;
+    try {
+      const r = await fetch(`/api/projects/${project.id}/needs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(needForm),
+      });
+      if (r.ok) {
+        const newNeed = await r.json();
+        setNeeds(ns => [...ns, newNeed]);
+        setNeedForm({ type: 'funding', description: '', urgency: 'normal' });
+        setAddingNeed(false);
+      }
+    } catch {}
+  };
 
   return (
     <div className="main">
@@ -714,7 +781,7 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
             )}
           </div>
 
-          {needs.length > 0 && (
+          {(needs.length > 0 || isOwner) && (
             <div className="panel">
               <div className="panel-title">What this project needs</div>
               {needs.map(n => (
@@ -726,6 +793,25 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
                   </div>
                 </div>
               ))}
+              {isOwner && (addingNeed ? (
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <select className="form-input" value={needForm.type} onChange={e => setNeedForm(f => ({ ...f, type: e.target.value }))}>
+                    {['funding', 'expertise', 'tools', 'land', 'space', 'technology'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <textarea className="form-input" placeholder="Describe what you need…" value={needForm.description} onChange={e => setNeedForm(f => ({ ...f, description: e.target.value }))} />
+                  <select className="form-input" value={needForm.urgency} onChange={e => setNeedForm(f => ({ ...f, urgency: e.target.value }))}>
+                    {['low', 'normal', 'high', 'critical'].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn-primary" style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem' }} onClick={handleAddNeed}>Add need</button>
+                    <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.6rem 1rem' }} onClick={() => setAddingNeed(false)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button style={{ marginTop: needs.length ? '1rem' : 0, background: 'none', border: '1px dashed rgba(255,255,255,0.2)', color: 'var(--sage)', cursor: 'pointer', borderRadius: '6px', padding: '0.5rem', width: '100%', fontFamily: 'var(--s)', fontSize: '0.8rem' }} onClick={() => setAddingNeed(true)}>
+                  + Add a need
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -736,10 +822,10 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
   );
 }
 
-function ResourcesPage() {
+function ResourcesPage({ resources, onOfferResource }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const types = ['all', 'funding', 'land', 'tools', 'expertise', 'space', 'technology'];
-  const filtered = typeFilter === 'all' ? MOCK_RESOURCES : MOCK_RESOURCES.filter(r => r.type === typeFilter);
+  const filtered = typeFilter === 'all' ? resources : resources.filter(r => r.type === typeFilter);
 
   return (
     <div className="main">
@@ -748,7 +834,7 @@ function ResourcesPage() {
           <div className="section-title">Resource Pool</div>
           <div className="section-sub">Funding, land, tools, and expertise available to community projects</div>
         </div>
-        <button className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.6rem 1.25rem' }}>
+        <button className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.6rem 1.25rem' }} onClick={onOfferResource}>
           + Offer a resource
         </button>
       </div>
@@ -813,9 +899,11 @@ export default function CommonGround() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toast, setToast] = useState(null);
-  const [stats] = useState(MOCK_STATS);
+  const [stats, setStats] = useState(MOCK_STATS);
   const [projects, setProjects] = useState(MOCK_PROJECTS);
   const [projectsLoading, setProjectsLoading] = useState(true);
+  const [resources, setResources] = useState(MOCK_RESOURCES);
+  const [showOfferModal, setShowOfferModal] = useState(false);
   const { user, loading } = useAuth();
 
   useEffect(() => {
@@ -826,6 +914,14 @@ export default function CommonGround() {
       })
       .catch(() => {})
       .finally(() => setProjectsLoading(false));
+    fetch('/api/resources')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length) setResources(data); })
+      .catch(() => {});
+    fetch('/api/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setStats(data); })
+      .catch(() => {});
   }, []);
 
   const showToast = (msg) => {
@@ -833,8 +929,64 @@ export default function CommonGround() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const handleContribute = (project, data) => {
-    showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
+  const handleContribute = async (project, data) => {
+    if (!user) {
+      showToast('Please sign in to contribute');
+      return;
+    }
+    try {
+      const r = await fetch(`/api/projects/${project.id}/contribute`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: data.amount, note: data.note }),
+      });
+      if (r.ok) {
+        showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
+        try {
+          const updated = await fetch(`/api/projects/${project.id}`).then(res => res.ok ? res.json() : null);
+          if (updated) {
+            setSelectedProject(prev => prev?.id === updated.id ? updated : prev);
+            setProjects(ps => ps.map(p => p.id === updated.id ? updated : p));
+          }
+        } catch {}
+      } else {
+        const body = await r.json().catch(() => ({}));
+        showToast(`✗ ${body.error || 'Failed to submit contribution'}`);
+      }
+    } catch {
+      showToast('✗ Network error — please try again');
+    }
+  };
+
+  const handleOfferSubmit = async (form) => {
+    setShowOfferModal(false);
+    if (!user) { showToast('Please sign in to offer a resource'); return; }
+    try {
+      const r = await fetch('/api/resources', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: user.id,
+          type: form.type,
+          title: form.title,
+          description: form.description,
+          quantity: form.quantity || null,
+          value: form.value ? Number(form.value) : null,
+        }),
+      });
+      if (r.ok) {
+        showToast(`✓ "${form.title}" added to the resource pool`);
+        const data = await fetch('/api/resources').then(res => res.ok ? res.json() : null);
+        if (Array.isArray(data) && data.length) setResources(data);
+      } else {
+        const body = await r.json().catch(() => ({}));
+        showToast(`✗ ${body.error || 'Failed to submit resource'}`);
+      }
+    } catch {
+      showToast('✗ Network error — please try again');
+    }
   };
 
   const handlePostSubmit = async (form) => {
@@ -925,13 +1077,19 @@ export default function CommonGround() {
             project={selectedProject}
             onBack={() => { setSelectedProject(null); setPage('projects'); }}
             onContribute={handleContribute}
+            user={user}
           />
         )}
-        {page === 'resources' && <ResourcesPage />}
+        {page === 'resources' && <ResourcesPage resources={resources} onOfferResource={() => setShowOfferModal(true)} />}
 
         {/* Post modal */}
         {showPostModal && (
           <PostProjectModal onClose={() => setShowPostModal(false)} onSubmit={handlePostSubmit} />
+        )}
+
+        {/* Offer resource modal */}
+        {showOfferModal && (
+          <OfferResourceModal onClose={() => setShowOfferModal(false)} onSubmit={handleOfferSubmit} />
         )}
 
         {/* Profile modal */}
