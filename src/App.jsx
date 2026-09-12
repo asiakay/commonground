@@ -592,6 +592,45 @@ function ContributePanel({ project, onContribute }) {
   );
 }
 
+function OfferResourceModal({ onClose, onSubmit }) {
+  const types = ['funding', 'land', 'tools', 'expertise', 'space', 'technology'];
+  const [form, setForm] = useState({ type: 'funding', title: '', description: '', quantity: '', value: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2 className="modal-title">Offer a resource</h2>
+        <div className="form-group">
+          <label className="form-label">Resource type</label>
+          <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+            {types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Title</label>
+          <input className="form-input" placeholder="e.g. Legal expertise for co-ops" value={form.title} onChange={e => set('title', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Description</label>
+          <textarea className="form-input" placeholder="What are you offering and who should reach out?" value={form.description} onChange={e => set('description', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Quantity / scope (optional)</label>
+          <input className="form-input" placeholder="e.g. Up to 20 hrs/project" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Estimated value ($ optional)</label>
+          <input className="form-input" type="number" placeholder="e.g. 5000" value={form.value} onChange={e => set('value', e.target.value)} />
+        </div>
+        <button className="btn-primary" style={{ width: '100%' }} onClick={() => onSubmit(form)} disabled={!form.title || !form.description}>
+          Submit resource
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Pages ──────────────────────────────────────────────────────────────────
 function HeroSection({ onExplore, onPost, projects }) {
   return (
@@ -736,10 +775,10 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
   );
 }
 
-function ResourcesPage() {
+function ResourcesPage({ resources, onOfferResource }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const types = ['all', 'funding', 'land', 'tools', 'expertise', 'space', 'technology'];
-  const filtered = typeFilter === 'all' ? MOCK_RESOURCES : MOCK_RESOURCES.filter(r => r.type === typeFilter);
+  const filtered = typeFilter === 'all' ? resources : resources.filter(r => r.type === typeFilter);
 
   return (
     <div className="main">
@@ -748,7 +787,7 @@ function ResourcesPage() {
           <div className="section-title">Resource Pool</div>
           <div className="section-sub">Funding, land, tools, and expertise available to community projects</div>
         </div>
-        <button className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.6rem 1.25rem' }}>
+        <button className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.6rem 1.25rem' }} onClick={onOfferResource}>
           + Offer a resource
         </button>
       </div>
@@ -816,6 +855,8 @@ export default function CommonGround() {
   const [stats] = useState(MOCK_STATS);
   const [projects, setProjects] = useState(MOCK_PROJECTS);
   const [projectsLoading, setProjectsLoading] = useState(true);
+  const [resources, setResources] = useState(MOCK_RESOURCES);
+  const [showOfferModal, setShowOfferModal] = useState(false);
   const { user, loading } = useAuth();
 
   useEffect(() => {
@@ -826,6 +867,10 @@ export default function CommonGround() {
       })
       .catch(() => {})
       .finally(() => setProjectsLoading(false));
+    fetch('/api/resources')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length) setResources(data); })
+      .catch(() => {});
   }, []);
 
   const showToast = (msg) => {
@@ -855,6 +900,36 @@ export default function CommonGround() {
       } else {
         const body = await r.json().catch(() => ({}));
         showToast(`✗ ${body.error || 'Failed to submit contribution'}`);
+      }
+    } catch {
+      showToast('✗ Network error — please try again');
+    }
+  };
+
+  const handleOfferSubmit = async (form) => {
+    setShowOfferModal(false);
+    if (!user) { showToast('Please sign in to offer a resource'); return; }
+    try {
+      const r = await fetch('/api/resources', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: user.id,
+          type: form.type,
+          title: form.title,
+          description: form.description,
+          quantity: form.quantity || null,
+          value: form.value ? Number(form.value) : null,
+        }),
+      });
+      if (r.ok) {
+        showToast(`✓ "${form.title}" added to the resource pool`);
+        const data = await fetch('/api/resources').then(res => res.ok ? res.json() : null);
+        if (Array.isArray(data) && data.length) setResources(data);
+      } else {
+        const body = await r.json().catch(() => ({}));
+        showToast(`✗ ${body.error || 'Failed to submit resource'}`);
       }
     } catch {
       showToast('✗ Network error — please try again');
@@ -951,11 +1026,16 @@ export default function CommonGround() {
             onContribute={handleContribute}
           />
         )}
-        {page === 'resources' && <ResourcesPage />}
+        {page === 'resources' && <ResourcesPage resources={resources} onOfferResource={() => setShowOfferModal(true)} />}
 
         {/* Post modal */}
         {showPostModal && (
           <PostProjectModal onClose={() => setShowPostModal(false)} onSubmit={handlePostSubmit} />
+        )}
+
+        {/* Offer resource modal */}
+        {showOfferModal && (
+          <OfferResourceModal onClose={() => setShowOfferModal(false)} onSubmit={handleOfferSubmit} />
         )}
 
         {/* Profile modal */}
