@@ -939,15 +939,17 @@ export default function CommonGround() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contributor_id: user.id, amount: data.amount, note: data.note }),
+        body: JSON.stringify({ amount: data.amount, note: data.note }),
       });
       if (r.ok) {
         showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
-        const updated = await fetch(`/api/projects/${project.id}`).then(res => res.ok ? res.json() : null);
-        if (updated) {
-          setSelectedProject(updated);
-          setProjects(ps => ps.map(p => p.id === updated.id ? updated : p));
-        }
+        try {
+          const updated = await fetch(`/api/projects/${project.id}`).then(res => res.ok ? res.json() : null);
+          if (updated) {
+            setSelectedProject(prev => prev?.id === updated.id ? updated : prev);
+            setProjects(ps => ps.map(p => p.id === updated.id ? updated : p));
+          }
+        } catch {}
       } else {
         const body = await r.json().catch(() => ({}));
         showToast(`✗ ${body.error || 'Failed to submit contribution'}`);
