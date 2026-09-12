@@ -852,7 +852,7 @@ export default function CommonGround() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toast, setToast] = useState(null);
-  const [stats] = useState(MOCK_STATS);
+  const [stats, setStats] = useState(MOCK_STATS);
   const [projects, setProjects] = useState(MOCK_PROJECTS);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [resources, setResources] = useState(MOCK_RESOURCES);
@@ -870,6 +870,10 @@ export default function CommonGround() {
     fetch('/api/resources')
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (Array.isArray(data) && data.length) setResources(data); })
+      .catch(() => {});
+    fetch('/api/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setStats(data); })
       .catch(() => {});
   }, []);
 
