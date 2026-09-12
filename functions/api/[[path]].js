@@ -19,6 +19,31 @@ function uid() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
+async function verifySession(request, env) {
+  if (!env.JWT_SECRET) return null;
+  const header = request.headers.get('Cookie') || '';
+  const m = header.match(/(?:^|;\s*)cg_session=([^;]*)/);
+  if (!m) return null;
+  const token = decodeURIComponent(m[1]);
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const b64d = s => {
+      s = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+    };
+    const key = await crypto.subtle.importKey('raw', enc.encode(env.JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify('HMAC', key, b64d(parts[2]), enc.encode(`${parts[0]}.${parts[1]}`));
+    if (!ok) return null;
+    const payload = JSON.parse(dec.decode(b64d(parts[1])));
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    return payload;
+  } catch { return null; }
+}
+
 async function router(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, '');
@@ -101,10 +126,13 @@ async function router(request, env) {
 
   const contributeMatch = path.match(/^\/api\/projects\/([^/]+)\/contribute$/);
   if (method === 'POST' && contributeMatch) {
+    const session = await verifySession(request, env);
+    if (!session) return err('Unauthorized', 401);
     const project_id = contributeMatch[1];
     const body = await request.json();
-    const { contributor_id, amount, note } = body;
-    if (!contributor_id || !amount || amount <= 0) return err('Missing required fields');
+    const { amount, note } = body;
+    if (!amount || amount <= 0) return err('Missing required fields');
+    const contributor_id = session.sub;
     const id = uid();
     await env.DB.prepare(
       'INSERT INTO contributions (id, project_id, contributor_id, amount, note) VALUES (?, ?, ?, ?, ?)'
