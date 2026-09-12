@@ -910,13 +910,13 @@ export default function CommonGround() {
     fetch('/api/projects')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.projects?.length) setProjects(data.projects);
+        if (Array.isArray(data)) setProjects(data);
       })
       .catch(() => {})
       .finally(() => setProjectsLoading(false));
     fetch('/api/resources')
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (Array.isArray(data) && data.length) setResources(data); })
+      .then(data => { if (Array.isArray(data)) setResources(data); })
       .catch(() => {});
     fetch('/api/stats')
       .then(r => r.ok ? r.json() : null)
@@ -1002,7 +1002,7 @@ export default function CommonGround() {
         showToast(`✓ "${form.title}" posted successfully`);
         // Refresh project list
         const data = await fetch('/api/projects').then(r => r.ok ? r.json() : null);
-        if (data?.projects?.length) setProjects(data.projects);
+        if (Array.isArray(data)) setProjects(data);
       } else {
         showToast(`✗ Failed to post project — please try again`);
       }
