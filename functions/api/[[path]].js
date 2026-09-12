@@ -86,6 +86,18 @@ async function router(request, env) {
     const { results } = await env.DB.prepare('SELECT * FROM needs WHERE project_id = ?').bind(needsMatch[1]).all();
     return json(results);
   }
+  if (method === 'POST' && needsMatch) {
+    const project_id = needsMatch[1];
+    const body = await request.json();
+    const { type, description, urgency } = body;
+    if (!type || !description) return err('Missing required fields');
+    const id = uid();
+    await env.DB.prepare(
+      'INSERT INTO needs (id, project_id, type, description, urgency) VALUES (?, ?, ?, ?, ?)'
+    ).bind(id, project_id, type, description, urgency || 'normal').run();
+    const need = await env.DB.prepare('SELECT * FROM needs WHERE id = ?').bind(id).first();
+    return json(need, 201);
+  }
 
   const contributeMatch = path.match(/^\/api\/projects\/([^/]+)\/contribute$/);
   if (method === 'POST' && contributeMatch) {

@@ -702,9 +702,37 @@ function ProjectsPage({ onSelect, projects, loading }) {
   );
 }
 
-function ProjectDetailPage({ project, onBack, onContribute }) {
-  const needs = MOCK_NEEDS[project.id] || [];
+function ProjectDetailPage({ project, onBack, onContribute, user }) {
+  const [needs, setNeeds] = useState(project.needs || MOCK_NEEDS[project.id] || []);
+  const [addingNeed, setAddingNeed] = useState(false);
+  const [needForm, setNeedForm] = useState({ type: 'funding', description: '', urgency: 'normal' });
+  const isOwner = user?.id === project.owner_id;
   const progress = pct(project.funding_raised, project.funding_goal);
+
+  useEffect(() => {
+    fetch(`/api/projects/${project.id}/needs`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data)) setNeeds(data); })
+      .catch(() => {});
+  }, [project.id]);
+
+  const handleAddNeed = async () => {
+    if (!needForm.description) return;
+    try {
+      const r = await fetch(`/api/projects/${project.id}/needs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(needForm),
+      });
+      if (r.ok) {
+        const newNeed = await r.json();
+        setNeeds(ns => [...ns, newNeed]);
+        setNeedForm({ type: 'funding', description: '', urgency: 'normal' });
+        setAddingNeed(false);
+      }
+    } catch {}
+  };
 
   return (
     <div className="main">
@@ -753,7 +781,7 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
             )}
           </div>
 
-          {needs.length > 0 && (
+          {(needs.length > 0 || isOwner) && (
             <div className="panel">
               <div className="panel-title">What this project needs</div>
               {needs.map(n => (
@@ -764,6 +792,25 @@ function ProjectDetailPage({ project, onBack, onContribute }) {
                     <div className="need-text">{n.description}</div>
                   </div>
                 </div>
+              ))}
+              {isOwner && (addingNeed ? (
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <select className="form-input" value={needForm.type} onChange={e => setNeedForm(f => ({ ...f, type: e.target.value }))}>
+                    {['funding', 'expertise', 'tools', 'land', 'space', 'technology'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <textarea className="form-input" placeholder="Describe what you need…" value={needForm.description} onChange={e => setNeedForm(f => ({ ...f, description: e.target.value }))} />
+                  <select className="form-input" value={needForm.urgency} onChange={e => setNeedForm(f => ({ ...f, urgency: e.target.value }))}>
+                    {['low', 'normal', 'high', 'critical'].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn-primary" style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem' }} onClick={handleAddNeed}>Add need</button>
+                    <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.6rem 1rem' }} onClick={() => setAddingNeed(false)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button style={{ marginTop: needs.length ? '1rem' : 0, background: 'none', border: '1px dashed rgba(255,255,255,0.2)', color: 'var(--sage)', cursor: 'pointer', borderRadius: '6px', padding: '0.5rem', width: '100%', fontFamily: 'var(--s)', fontSize: '0.8rem' }} onClick={() => setAddingNeed(true)}>
+                  + Add a need
+                </button>
               ))}
             </div>
           )}
@@ -1028,6 +1075,7 @@ export default function CommonGround() {
             project={selectedProject}
             onBack={() => { setSelectedProject(null); setPage('projects'); }}
             onContribute={handleContribute}
+            user={user}
           />
         )}
         {page === 'resources' && <ResourcesPage resources={resources} onOfferResource={() => setShowOfferModal(true)} />}
