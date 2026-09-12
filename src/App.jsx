@@ -833,8 +833,32 @@ export default function CommonGround() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const handleContribute = (project, data) => {
-    showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
+  const handleContribute = async (project, data) => {
+    if (!user) {
+      showToast('Please sign in to contribute');
+      return;
+    }
+    try {
+      const r = await fetch(`/api/projects/${project.id}/contribute`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contributor_id: user.id, amount: data.amount, note: data.note }),
+      });
+      if (r.ok) {
+        showToast(`✓ Contribution of $${data.amount} submitted to ${project.title}`);
+        const updated = await fetch(`/api/projects/${project.id}`).then(res => res.ok ? res.json() : null);
+        if (updated) {
+          setSelectedProject(updated);
+          setProjects(ps => ps.map(p => p.id === updated.id ? updated : p));
+        }
+      } else {
+        const body = await r.json().catch(() => ({}));
+        showToast(`✗ ${body.error || 'Failed to submit contribution'}`);
+      }
+    } catch {
+      showToast('✗ Network error — please try again');
+    }
   };
 
   const handlePostSubmit = async (form) => {
