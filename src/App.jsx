@@ -262,7 +262,8 @@ const style = `
   }
   .form-input:focus { border-color: var(--sun); }
   .form-input::placeholder { color: rgba(255,255,255,0.25); }
-  select.form-input { cursor: pointer; }
+  select.form-input { cursor: pointer; background: var(--soil); }
+  select.form-input option { background: var(--soil); color: var(--white); }
   textarea.form-input { resize: vertical; min-height: 80px; }
 
   /* QF explainer */
